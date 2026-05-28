@@ -1,10 +1,4 @@
-/**
- * Rooms CRUD — adjust TABLE, PK, and column names to match your schema.
- */
 import { getPool, sql, ok, err, preflight } from './db.js'
-
-const TABLE = 'LotRooms'   // ← update if needed (e.g. 'Rooms', 'LotRoomInformation')
-const PK = 'RoomID'
 
 export const config = {
   path: ['/api/rooms', '/api/rooms/:id']
@@ -12,7 +6,6 @@ export const config = {
 
 export default async (request, context) => {
   if (request.method === 'OPTIONS') return preflight()
-
   const { id } = context.params ?? {}
   const url = new URL(request.url)
 
@@ -23,52 +16,49 @@ export default async (request, context) => {
       if (id) {
         const r = await pool.request()
           .input('id', sql.Int, parseInt(id))
-          .query(`SELECT * FROM ${TABLE} WHERE ${PK} = @id`)
+          .query('SELECT * FROM AppRooms WHERE RoomID = @id')
         if (!r.recordset.length) return err('Not found', 404)
         return ok(r.recordset[0])
       }
-
       const lotId = url.searchParams.get('lotId')
       if (lotId) {
         const r = await pool.request()
           .input('lotId', sql.Int, parseInt(lotId))
-          .query(`SELECT * FROM ${TABLE} WHERE LotID = @lotId ORDER BY RoomNumber`)
+          .query('SELECT * FROM AppRooms WHERE LotID = @lotId ORDER BY RoomNumber')
         return ok(r.recordset)
       }
-
-      const r = await pool.request().query(`SELECT * FROM ${TABLE} ORDER BY RoomNumber`)
+      const r = await pool.request().query('SELECT * FROM AppRooms ORDER BY LotID, RoomNumber')
       return ok({ data: r.recordset, total: r.recordset.length })
     }
 
     if (request.method === 'POST') {
       const b = await request.json()
       const r = await pool.request()
-        .input('LotID', sql.Int, b.LotID ? parseInt(b.LotID) : null)
-        .input('RoomNumber', sql.NVarChar(20), b.RoomNumber ?? null)
-        .input('RoomType', sql.NVarChar(20), b.RoomType ?? null)
-        .input('RoomNote', sql.NVarChar(sql.MAX), b.RoomNote ?? null)
-        .query(`INSERT INTO ${TABLE} (LotID, RoomNumber, RoomType, RoomNote)
+        .input('LotID',      sql.Int,         parseInt(b.LotID))
+        .input('RoomNumber', sql.VarChar(20),  b.RoomNumber ?? null)
+        .input('RoomType',   sql.VarChar(20),  b.RoomType   ?? null)
+        .input('RoomNote',   sql.NVarChar(sql.MAX), b.RoomNote ?? null)
+        .query(`INSERT INTO AppRooms (LotID,RoomNumber,RoomType,RoomNote)
                 OUTPUT INSERTED.*
-                VALUES (@LotID, @RoomNumber, @RoomType, @RoomNote)`)
+                VALUES (@LotID,@RoomNumber,@RoomType,@RoomNote)`)
       return ok(r.recordset[0], 201)
     }
 
     if (request.method === 'PUT' && id) {
       const b = await request.json()
       await pool.request()
-        .input('id', sql.Int, parseInt(id))
-        .input('RoomNumber', sql.NVarChar(20), b.RoomNumber ?? null)
-        .input('RoomType', sql.NVarChar(20), b.RoomType ?? null)
-        .input('RoomNote', sql.NVarChar(sql.MAX), b.RoomNote ?? null)
-        .query(`UPDATE ${TABLE} SET RoomNumber=@RoomNumber, RoomType=@RoomType, RoomNote=@RoomNote
-                WHERE ${PK}=@id`)
+        .input('id',         sql.Int,          parseInt(id))
+        .input('RoomNumber', sql.VarChar(20),  b.RoomNumber ?? null)
+        .input('RoomType',   sql.VarChar(20),  b.RoomType   ?? null)
+        .input('RoomNote',   sql.NVarChar(sql.MAX), b.RoomNote ?? null)
+        .query('UPDATE AppRooms SET RoomNumber=@RoomNumber, RoomType=@RoomType, RoomNote=@RoomNote WHERE RoomID=@id')
       return ok({ success: true })
     }
 
     if (request.method === 'DELETE' && id) {
       await pool.request()
         .input('id', sql.Int, parseInt(id))
-        .query(`DELETE FROM ${TABLE} WHERE ${PK} = @id`)
+        .query('DELETE FROM AppRooms WHERE RoomID = @id')
       return ok({ success: true })
     }
 
