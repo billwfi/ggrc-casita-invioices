@@ -84,5 +84,7 @@ export const api = {
       update: (id, data) => put(`setup/${id}`, data),
       delete: (id) => del(`setup/${id}`)
     }
-  }
+  },
+  importRevenue: (rows, clearFirst = false) =>
+    post('import-revenue', { rows, clearFirst })
 }

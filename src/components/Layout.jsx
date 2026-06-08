@@ -20,7 +20,8 @@ const groups = [
   {
     title: 'Setup Maintenance',
     items: [
-      { label: 'Owner Expense Type Management', to: '/setup/expense-types' }
+      { label: 'Owner Expense Type Management', to: '/setup/expense-types' },
+      { label: 'Import General Revenue', to: '/setup/import-revenue' }
     ]
   },
   {
