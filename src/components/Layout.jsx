@@ -70,6 +70,15 @@ const groups = [
   }
 ]
 
+// Exact match on both pathname AND query string so items sharing the same
+// base path (e.g. /lots, /lots?view=owners, /lots?view=rooms) highlight independently.
+function isItemActive(item, location) {
+  const [path, qs] = item.to.split('?')
+  if (location.pathname !== path) return false
+  if (!qs) return location.search === ''
+  return location.search === `?${qs}`
+}
+
 export default function Layout({ children }) {
   const location = useLocation()
 
@@ -86,9 +95,7 @@ export default function Layout({ children }) {
         <nav className="w-60 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: '#152a50' }}>
           <div className="py-3 space-y-1">
             {groups.map((group) => {
-              const isGroupActive = group.items.some(
-                item => location.pathname === item.to.split('?')[0]
-              )
+              const isGroupActive = group.items.some(item => isItemActive(item, location))
 
               return (
                 <div key={group.label}>
@@ -104,27 +111,24 @@ export default function Layout({ children }) {
 
                   {/* Sub-items */}
                   <ul className="mt-0.5 mb-1">
-                    {group.items.map((item) => (
-                      <li key={item.to}>
-                        <NavLink
-                          to={item.to}
-                          className={({ isActive }) =>
-                            `flex items-center gap-2 pl-12 pr-3 py-1.5 mx-2 rounded-md text-sm transition-colors ${
-                              isActive
+                    {group.items.map((item) => {
+                      const active = isItemActive(item, location)
+                      return (
+                        <li key={item.to}>
+                          <NavLink
+                            to={item.to}
+                            className={`flex items-center gap-2 pl-12 pr-3 py-1.5 mx-2 rounded-md text-sm transition-colors ${
+                              active
                                 ? 'bg-blue-600 text-white font-medium'
                                 : 'text-gray-400 hover:bg-white/10 hover:text-white'
-                            }`
-                          }
-                        >
-                          {({ isActive }) => (
-                            <>
-                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-white' : 'bg-gray-500'}`} />
-                              {item.label}
-                            </>
-                          )}
-                        </NavLink>
-                      </li>
-                    ))}
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${active ? 'bg-white' : 'bg-gray-500'}`} />
+                            {item.label}
+                          </NavLink>
+                        </li>
+                      )
+                    })}
                   </ul>
 
                   {/* Divider between groups */}
