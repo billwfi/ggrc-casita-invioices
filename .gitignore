@@ -4,3 +4,4 @@ dist/
 .env.local
 .netlify/*
 !.netlify/state.json
+.netlify-site-id.tmp

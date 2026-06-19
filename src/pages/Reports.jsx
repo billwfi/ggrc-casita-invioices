@@ -7,8 +7,8 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—'
 const fmtCur = (v) => v != null ? `$${Number(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}` : '—'
 
 const REPORT_CONFIGS = {
-  'invoice-details': {
-    title: 'Lot Invoice Details by Activity Dates',
+  'statement-details': {
+    title: 'Lot Statement Details by Activity Dates',
     columns: [
       { key: 'LotNumber', label: 'Lot #' },
       { key: 'AccountNo', label: 'Account' },
@@ -37,7 +37,7 @@ const REPORT_CONFIGS = {
     ]
   },
   'audit-data': {
-    title: 'Lot Invoice Audit Data — By Stay Date',
+    title: 'Lot Statement Audit Data — By Stay Date',
     columns: [
       { key: 'LotNumber', label: 'Lot #' },
       { key: 'AccountNo', label: 'Account' },
@@ -55,7 +55,7 @@ const REPORT_CONFIGS = {
 
 export default function Reports() {
   const { type } = useParams()
-  const config = REPORT_CONFIGS[type] ?? REPORT_CONFIGS['invoice-details']
+  const config = REPORT_CONFIGS[type] ?? REPORT_CONFIGS['statement-details']
 
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')

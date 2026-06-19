@@ -1,9 +1,15 @@
-const BASE = '/.netlify/functions'
+const BASE = '/api'
 
 async function handle(res) {
   const text = await res.text()
   let data
-  try { data = JSON.parse(text) } catch { data = { error: text } }
+  try {
+    data = JSON.parse(text)
+  } catch {
+    // A non-JSON body (e.g. the SPA index.html from a misrouted request) must
+    // not be treated as a valid empty result — surface it as an error.
+    throw new Error(res.ok ? 'Unexpected non-JSON response from API (check function routing)' : `HTTP ${res.status}`)
+  }
   if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
   return data
 }
@@ -45,6 +51,7 @@ export const api = {
     delete: (id) => del(`lots/${id}`)
   },
   owners: {
+    list: () => get('owners'),
     getByLot: (lotId) => get(`owners?lotId=${lotId}`),
     get: (id) => get(`owners/${id}`),
     create: (data) => post('owners', data),
@@ -66,7 +73,10 @@ export const api = {
   statements: {
     getByLot: (lotId) => get(`statements?lotId=${lotId}`),
     get: (id) => get(`statements/${id}`),
-    create: (data) => post('statements', data)
+    create: (data) => post('statements', data),
+    delete: (id) => del(`statements/${id}`),
+    recalc: () => post('statements/recalc', {}),
+    generateAll: (data) => post('statements/generate-all', data)
   },
   adjustments: {
     getByStatement: (statementId) => get(`adjustments?statementId=${statementId}`),
@@ -77,6 +87,8 @@ export const api = {
   reports: {
     run: (type, params = {}) => get(`reports?type=${type}&${new URLSearchParams(params)}`)
   },
+  statistics: (lotId, start, end) =>
+    get(`statistics?lotId=${lotId}${start && end ? `&start=${start}&end=${end}` : ''}`),
   setup: {
     expenseTypes: {
       list: () => get('setup'),
