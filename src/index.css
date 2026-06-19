@@ -52,3 +52,12 @@
     @apply bg-navy-800 text-white font-medium;
   }
 }
+
+@media print {
+  @page { margin: 0.5in; }
+  body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .no-print { display: none !important; }
+  header, nav { display: none !important; }
+  main { overflow: visible !important; padding: 0 !important; height: auto !important; }
+  .print-avoid-break { break-inside: avoid; }
+}

@@ -90,7 +90,11 @@ export default async (request, context) => {
           .query('SELECT * FROM AppOwners WHERE LotID = @lotId ORDER BY DateOfPurchase DESC')
         return ok(r.recordset)
       }
-      const r = await pool.request().query('SELECT * FROM AppOwners ORDER BY OwnerName')
+      const r = await pool.request().query(`
+        SELECT o.*, l.LotNumber, l.LotAddress
+        FROM AppOwners o
+        LEFT JOIN AppLots l ON l.LotID = o.LotID
+        ORDER BY o.OwnerName`)
       return ok({ data: r.recordset, total: r.recordset.length })
     }
 

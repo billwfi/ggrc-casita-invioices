@@ -17,7 +17,7 @@ export default async (request) => {
     const pool = await getPool()
     const lotFilter = lotNumber ? 'AND l.LotNumber = @lotNum' : ''
 
-    if (type === 'invoice-details') {
+    if (type === 'statement-details') {
       const req = pool.request()
         .input('start', sql.Date, new Date(startDate))
         .input('end',   sql.Date, new Date(endDate))

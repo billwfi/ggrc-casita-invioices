@@ -1,5 +1,7 @@
 import { getPool, sql, ok, err, preflight } from './db.js'
 
+export const config = { path: '/api/import-revenue' }
+
 // Actual casita_generalrevenue column names and types (from INFORMATION_SCHEMA):
 //   indx            int NOT NULL  ← identity PK, excluded from INSERT
 //   roomnumber      varchar(50)

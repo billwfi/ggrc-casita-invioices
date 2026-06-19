@@ -8,6 +8,14 @@ function IconLot() {
   )
 }
 
+function IconDoc() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+      <path fillRule="evenodd" d="M4 4a2 2 0 012-2h5.586A2 2 0 0113 2.586L16.414 6A2 2 0 0117 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 3a1 1 0 011-1h2a1 1 0 110 2H7a1 1 0 01-1-1zm0 3a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm0 3a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
 function IconChart() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -24,31 +32,27 @@ function IconGear() {
   )
 }
 
-function IconDatabase() {
-  return (
-    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-      <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z" />
-      <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z" />
-      <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z" />
-    </svg>
-  )
-}
-
 const groups = [
   {
     label: 'Lot & Owner Maintenance',
     Icon: IconLot,
     items: [
       { label: 'Lot Information',        to: '/lots' },
-      { label: 'Owner Information',      to: '/lots?view=owners' },
-      { label: 'Lot & Room Info',        to: '/lots?view=rooms' }
+      { label: 'Owner Information',      to: '/owners' }
+    ]
+  },
+  {
+    label: 'Statements',
+    Icon: IconDoc,
+    items: [
+      { label: 'Generate Statements',    to: '/statements' }
     ]
   },
   {
     label: 'Reports',
     Icon: IconChart,
     items: [
-      { label: 'Invoice Details by Activity',  to: '/reports/invoice-details' },
+      { label: 'Statement Details by Activity',  to: '/reports/statement-details' },
       { label: 'Trans Code 1032 Adjustments',  to: '/reports/trans-code-1032' },
       { label: 'Audit Data – By Stay Date',    to: '/reports/audit-data' }
     ]
@@ -59,13 +63,6 @@ const groups = [
     items: [
       { label: 'Owner Expense Types',    to: '/setup/expense-types' },
       { label: 'Import General Revenue', to: '/setup/import-revenue' }
-    ]
-  },
-  {
-    label: 'Admin',
-    Icon: IconDatabase,
-    items: [
-      { label: 'Database Schema Browser', to: '/schema' }
     ]
   }
 ]
@@ -85,9 +82,11 @@ export default function Layout({ children }) {
   return (
     <div className="flex flex-col h-screen">
       {/* Top bar */}
-      <header className="bg-navy-900 text-white flex items-center px-4 h-12 flex-shrink-0 shadow z-10">
-        <span className="font-bold text-base tracking-wide mr-2 text-blue-400">GGRC</span>
-        <span className="text-gray-400 text-xs font-medium">Garden of the Gods Resort — Casita Invoices</span>
+      <header className="bg-navy-900 text-white flex items-center justify-between px-4 h-12 flex-shrink-0 shadow z-10">
+        <div className="bg-white rounded px-2 py-1 flex items-center">
+          <img src="/ggrc-logo.png" alt="Garden of the Gods Resort — Wellness Club" className="h-7 w-auto" />
+        </div>
+        <span className="text-gray-300 text-xs font-medium">Garden of the Gods Resort — Casita Statements</span>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
