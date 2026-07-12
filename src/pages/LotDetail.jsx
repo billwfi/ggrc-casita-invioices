@@ -14,6 +14,13 @@ export default function LotDetail() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('overview')
 
+  // New-statement form (per-lot invoice generation)
+  const [showStmtForm, setShowStmtForm] = useState(false)
+  const [stmtStart, setStmtStart] = useState('')
+  const [stmtEnd, setStmtEnd] = useState('')
+  const [creatingStmt, setCreatingStmt] = useState(false)
+  const [stmtError, setStmtError] = useState(null)
+
   useEffect(() => {
     async function load() {
       setLoading(true)
@@ -44,6 +51,35 @@ export default function LotDetail() {
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—'
   const fmtCurrency = (v) => v != null ? `$${Number(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}` : '—'
+
+  async function createStatement() {
+    if (!stmtStart || !stmtEnd) {
+      alert('Please select an activity start and end date.')
+      return
+    }
+    if (stmtEnd < stmtStart) {
+      alert('End date must be on or after the start date.')
+      return
+    }
+    setCreatingStmt(true)
+    setStmtError(null)
+    try {
+      await api.statements.create({
+        LotID: lotId,
+        ActivityStartDate: stmtStart,
+        ActivityEndDate: stmtEnd
+      })
+      const stmtData = await api.statements.getByLot(lotId).catch(() => [])
+      setStatements(Array.isArray(stmtData) ? stmtData : (stmtData?.data ?? []))
+      setShowStmtForm(false)
+      setStmtStart('')
+      setStmtEnd('')
+    } catch (e) {
+      setStmtError(e.message)
+    } finally {
+      setCreatingStmt(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -149,8 +185,32 @@ export default function LotDetail() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
             <h2 className="font-semibold text-gray-700">Statements</h2>
-            <button className="btn-primary btn-sm">+ New Statement</button>
+            <button className="btn-primary btn-sm" onClick={() => { setShowStmtForm(v => !v); setStmtError(null) }}>
+              {showStmtForm ? 'Cancel' : '+ New Statement'}
+            </button>
           </div>
+
+          {showStmtForm && (
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex flex-wrap gap-4 items-end">
+                <div>
+                  <label className="label">Activity Start Date *</label>
+                  <input type="date" className="input" value={stmtStart} onChange={(e) => setStmtStart(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Activity End Date *</label>
+                  <input type="date" className="input" value={stmtEnd} onChange={(e) => setStmtEnd(e.target.value)} />
+                </div>
+                <button className="btn-primary btn-sm" onClick={createStatement} disabled={creatingStmt}>
+                  {creatingStmt ? 'Creating…' : 'Create Statement'}
+                </button>
+              </div>
+              {stmtError && (
+                <div className="mt-3 p-2 bg-red-50 text-red-700 rounded text-sm">{stmtError}</div>
+              )}
+            </div>
+          )}
+
           <DataTable
             columns={[
               { key: 'StatementNumber', label: 'Statement #' },
