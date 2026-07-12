@@ -55,6 +55,8 @@ const REPORT_CONFIGS = {
     title: 'General Revenue — By Stay Date',
     // Reads imported revenue directly from casita_generalrevenue, so it shows
     // data even before any invoices/statements have been created.
+    startLabel: 'Stay Date – Start *',
+    endLabel: 'Stay Date – End *',
     filterParam: 'roomNumber',
     filterLabel: 'Room # (optional)',
     totalKey: 'RoomRevenue',
@@ -118,11 +120,11 @@ export default function Reports() {
       <div className="card p-4">
         <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label className="label">Activity Start Date *</label>
+            <label className="label">{config.startLabel ?? 'Activity Start Date *'}</label>
             <input type="date" className="input" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </div>
           <div>
-            <label className="label">Activity End Date *</label>
+            <label className="label">{config.endLabel ?? 'Activity End Date *'}</label>
             <input type="date" className="input" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </div>
           <div>
