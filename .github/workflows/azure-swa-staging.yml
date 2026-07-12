@@ -1,0 +1,33 @@
+name: Azure Static Web Apps - staging
+
+# Deploys the staging environment on pushes to the `staging` branch.
+# Self-skips until AZURE_SWA_TOKEN_STAGING exists, so it never fails pre-provision.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    name: Build and Deploy (staging)
+    env:
+      SWA_TOKEN: ${{ secrets.AZURE_SWA_TOKEN_STAGING }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Waiting for provisioning
+        if: env.SWA_TOKEN == ''
+        run: echo "AZURE_SWA_TOKEN_STAGING not set yet — staging Static Web App not provisioned. Skipping deploy."
+
+      - name: Build And Deploy
+        if: env.SWA_TOKEN != ''
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          action: upload
+          app_location: "/"
+          output_location: "dist"
+          api_location: "api"
