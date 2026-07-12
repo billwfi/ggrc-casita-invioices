@@ -66,7 +66,9 @@ export const api = {
   statements: {
     getByLot: (lotId) => get(`statements?lotId=${lotId}`),
     get: (id) => get(`statements/${id}`),
-    create: (data) => post('statements', data)
+    create: (data) => post('statements', data),
+    generate: ({ ActivityStartDate, ActivityEndDate }) =>
+      post('statements', { generateAll: true, ActivityStartDate, ActivityEndDate })
   },
   adjustments: {
     getByStatement: (statementId) => get(`adjustments?statementId=${statementId}`),

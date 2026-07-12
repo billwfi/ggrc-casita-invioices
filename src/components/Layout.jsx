@@ -41,7 +41,8 @@ const groups = [
     items: [
       { label: 'Lot Information',        to: '/lots' },
       { label: 'Owner Information',      to: '/lots?view=owners' },
-      { label: 'Lot & Room Info',        to: '/lots?view=rooms' }
+      { label: 'Lot & Room Info',        to: '/lots?view=rooms' },
+      { label: 'Generate Statements',    to: '/statements/generate' }
     ]
   },
   {

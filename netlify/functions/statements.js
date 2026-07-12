@@ -120,6 +120,43 @@ export default async (request, context) => {
 
     if (request.method === 'POST') {
       const b = await request.json()
+
+      // Bulk generate: create a statement for every lot for the given activity
+      // period, skipping any lot that already has one for that exact period.
+      // The dollar figures are computed on-read from the revenue view, so
+      // "generating" a statement just creates the AppStatements period record.
+      if (b.generateAll) {
+        if (!b.ActivityStartDate || !b.ActivityEndDate) {
+          return err('ActivityStartDate and ActivityEndDate are required', 400)
+        }
+        const period = b.ActivityStartDate.slice(0, 7).replace('-', '') // YYYYMM
+
+        const totalRes = await pool.request()
+          .query('SELECT COUNT(*) AS n FROM AppLots')
+        const totalLots = totalRes.recordset[0]?.n ?? 0
+
+        const gen = await pool.request()
+          .input('period',    sql.VarChar(6), period)
+          .input('stmtDate',  sql.Date, new Date())
+          .input('start',     sql.Date, new Date(b.ActivityStartDate))
+          .input('end',       sql.Date, new Date(b.ActivityEndDate))
+          .query(`
+            INSERT INTO AppStatements (LotID, StatementNumber, StatementDate, ActivityStartDate, ActivityEndDate)
+            SELECT l.LotID,
+                   CONCAT('LOT', l.LotNumber, '-', @period),
+                   @stmtDate, @start, @end
+            FROM AppLots l
+            WHERE NOT EXISTS (
+              SELECT 1 FROM AppStatements s
+              WHERE s.LotID = l.LotID
+                AND s.ActivityStartDate = @start
+                AND s.ActivityEndDate   = @end
+            )`)
+
+        const created = gen.rowsAffected[0] ?? 0
+        return ok({ created, skipped: totalLots - created, totalLots })
+      }
+
       const lotRes = await pool.request()
         .input('lotId', sql.Int, parseInt(b.LotID))
         .query('SELECT LotNumber FROM AppLots WHERE LotID = @lotId')
