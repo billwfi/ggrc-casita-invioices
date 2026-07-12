@@ -1,4 +1,4 @@
-const BASE = '/.netlify/functions'
+const BASE = '/api'
 
 async function handle(res) {
   const text = await res.text()
