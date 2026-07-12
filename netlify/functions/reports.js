@@ -10,6 +10,7 @@ export default async (request) => {
   const startDate = url.searchParams.get('startDate')
   const endDate   = url.searchParams.get('endDate')
   const lotNumber = url.searchParams.get('lotNumber')
+  const roomNumber = url.searchParams.get('roomNumber')
 
   if (!startDate || !endDate) return err('startDate and endDate are required', 400)
 
@@ -105,6 +106,38 @@ export default async (request) => {
         WHERE s.ActivityStartDate <= @end AND s.ActivityEndDate >= @start
           ${lotFilter}
         ORDER BY l.LotNumber, d.StayDate, d.RoomNumber`)
+      return ok(r.recordset)
+    }
+
+    if (type === 'general-revenue') {
+      // Reads the raw imported base table directly by stay date.
+      // Independent of AppStatements / the invoice view, so freshly imported
+      // revenue is visible before any statements have been generated.
+      const req = pool.request()
+        .input('start', sql.Date, new Date(startDate))
+        .input('end',   sql.Date, new Date(endDate))
+      const roomFilter = roomNumber ? 'AND roomnumber = @room' : ''
+      if (roomNumber) req.input('room', sql.VarChar(50), roomNumber)
+
+      const r = await req.query(`
+        SELECT
+          roomnumber              AS RoomNumber,
+          confirmationnumber      AS ConfirmationNumber,
+          CAST(staydate      AS DATE) AS StayDate,
+          CAST(arrivaldate   AS DATE) AS ArrivalDate,
+          CAST(departuredate AS DATE) AS DepartureDate,
+          numberofnights          AS Nights,
+          roomtype                AS RoomType,
+          ratecode                AS RateCode,
+          transactioncode         AS TransCode,
+          marketgroupcode         AS MarketGroupCode,
+          reservationstatus       AS ReservationStatus,
+          TRY_CAST(REPLACE(REPLACE(CAST(roomrevenue AS VARCHAR(25)), '$', ''), ',', '') AS DECIMAL(12,2)) AS RoomRevenue,
+          rate                    AS Rate
+        FROM casita_generalrevenue
+        WHERE CAST(staydate AS DATE) BETWEEN @start AND @end
+          ${roomFilter}
+        ORDER BY StayDate, RoomNumber, ConfirmationNumber`)
       return ok(r.recordset)
     }
 

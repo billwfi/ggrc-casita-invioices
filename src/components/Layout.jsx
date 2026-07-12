@@ -48,6 +48,7 @@ const groups = [
     label: 'Reports',
     Icon: IconChart,
     items: [
+      { label: 'General Revenue – By Stay Date', to: '/reports/general-revenue' },
       { label: 'Invoice Details by Activity',  to: '/reports/invoice-details' },
       { label: 'Trans Code 1032 Adjustments',  to: '/reports/trans-code-1032' },
       { label: 'Audit Data – By Stay Date',    to: '/reports/audit-data' }

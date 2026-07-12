@@ -50,16 +50,41 @@ const REPORT_CONFIGS = {
       { key: 'RoomRevenue', label: 'Revenue', render: fmtCur },
       { key: 'ReservationStatus', label: 'Status' }
     ]
+  },
+  'general-revenue': {
+    title: 'General Revenue — By Stay Date',
+    // Reads imported revenue directly from casita_generalrevenue, so it shows
+    // data even before any invoices/statements have been created.
+    filterParam: 'roomNumber',
+    filterLabel: 'Room # (optional)',
+    totalKey: 'RoomRevenue',
+    columns: [
+      { key: 'RoomNumber', label: 'Room' },
+      { key: 'ConfirmationNumber', label: 'Conf #' },
+      { key: 'StayDate', label: 'Stay Date', render: fmtDate },
+      { key: 'ArrivalDate', label: 'Arrival', render: fmtDate },
+      { key: 'DepartureDate', label: 'Departure', render: fmtDate },
+      { key: 'Nights', label: 'Nights' },
+      { key: 'RoomType', label: 'Room Type' },
+      { key: 'RateCode', label: 'Rate Code' },
+      { key: 'TransCode', label: 'Trans Code' },
+      { key: 'MarketGroupCode', label: 'Mkt Grp' },
+      { key: 'ReservationStatus', label: 'Status' },
+      { key: 'Rate', label: 'Rate', render: fmtCur },
+      { key: 'RoomRevenue', label: 'Revenue', render: fmtCur }
+    ]
   }
 }
 
 export default function Reports() {
   const { type } = useParams()
   const config = REPORT_CONFIGS[type] ?? REPORT_CONFIGS['invoice-details']
+  const filterParam = config.filterParam ?? 'lotNumber'
+  const filterLabel = config.filterLabel ?? 'Lot # (optional)'
 
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [lotNumber, setLotNumber] = useState('')
+  const [filterValue, setFilterValue] = useState('')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -75,7 +100,7 @@ export default function Reports() {
     setRan(false)
     try {
       const params = { startDate, endDate }
-      if (lotNumber) params.lotNumber = lotNumber
+      if (filterValue) params[filterParam] = filterValue
       const res = await api.reports.run(type, params)
       setRows(Array.isArray(res) ? res : (res?.data ?? []))
       setRan(true)
@@ -101,8 +126,8 @@ export default function Reports() {
             <input type="date" className="input" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </div>
           <div>
-            <label className="label">Lot # (optional)</label>
-            <input type="text" className="input w-24" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="All" />
+            <label className="label">{filterLabel}</label>
+            <input type="text" className="input w-24" value={filterValue} onChange={(e) => setFilterValue(e.target.value)} placeholder="All" />
           </div>
           <button className="btn-primary" onClick={run} disabled={loading}>
             {loading ? 'Running...' : 'Run Report'}
@@ -132,6 +157,12 @@ export default function Reports() {
         <div className="card overflow-hidden">
           <div className="p-3 border-b border-gray-200 flex items-center justify-between">
             <span className="text-sm text-gray-600">{rows.length} records</span>
+            {config.totalKey && (
+              <span className="text-sm font-semibold text-gray-700">
+                Total {config.columns.find(c => c.key === config.totalKey)?.label ?? 'Revenue'}:{' '}
+                {fmtCur(rows.reduce((a, r) => a + (Number(r[config.totalKey]) || 0), 0))}
+              </span>
+            )}
           </div>
           <DataTable columns={config.columns} rows={rows} emptyMessage="No records for selected date range." />
         </div>
