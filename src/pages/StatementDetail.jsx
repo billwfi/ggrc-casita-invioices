@@ -4,7 +4,24 @@ import { api } from '../api'
 import DataTable from '../components/DataTable'
 import Modal from '../components/Modal'
 
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—'
+const ADJ_TYPES = [
+  'Linen Restocking',
+  'Maintenance & Repair',
+  'Replacement FF&E',
+  'Reserve Adjustment',
+  'Other',
+  'Room Rate Adjustment'
+]
+
+// Date-only values come from SQL as 'YYYY-MM-DD...'; format from the parts so a
+// UTC midnight value isn't shifted back a day in local (e.g. Mountain) time.
+const fmtDate = (d) => {
+  if (!d) return '—'
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return `${+m[2]}/${+m[3]}/${m[1]}`
+  const dt = new Date(d)
+  return isNaN(dt) ? '—' : dt.toLocaleDateString()
+}
 const fmtCur = (v) => v != null ? `$${Number(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}` : '—'
 const fmtNeg = (v) => {
   if (v == null) return '—'
@@ -18,9 +35,11 @@ export default function StatementDetail() {
   const [stmt, setStmt] = useState(null)
   const [lot, setLot] = useState(null)
   const [adjustments, setAdjustments] = useState([])
+  const [owner, setOwner] = useState(null)
+  const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [tab, setTab] = useState('invoice')
+  const [tab, setTab] = useState('statement')
   const [adjModal, setAdjModal] = useState(null)
   const [adjForm, setAdjForm] = useState({})
 
@@ -28,14 +47,21 @@ export default function StatementDetail() {
     async function load() {
       setLoading(true)
       try {
-        const [stmtData, lotData, adjData] = await Promise.all([
+        const [stmtData, lotData, adjData, ownerData] = await Promise.all([
           api.statements.get(statementId),
           api.lots.get(lotId),
-          api.adjustments.getByStatement(statementId).catch(() => [])
+          api.adjustments.getByStatement(statementId).catch(() => []),
+          api.owners.getByLot(lotId).catch(() => [])
         ])
         setStmt(stmtData)
         setLot(lotData)
         setAdjustments(Array.isArray(adjData) ? adjData : (adjData?.data ?? []))
+        const owners = Array.isArray(ownerData) ? ownerData : (ownerData?.data ?? [])
+        setOwner(owners.find(o => !o.OwnershipEndDate) ?? owners[0] ?? null)
+        // Statistics scoped to this statement's activity period
+        const start = stmtData.ActivityStartDate ? String(stmtData.ActivityStartDate).slice(0, 10) : null
+        const end = stmtData.ActivityEndDate ? String(stmtData.ActivityEndDate).slice(0, 10) : null
+        setStats(await api.statistics(lotId, start, end).catch(() => null))
       } catch (e) {
         setError(e.message)
       } finally {
@@ -60,6 +86,43 @@ export default function StatementDetail() {
     }
   }
 
+  function emailStatement() {
+    const start = fmtDate(stmt.ActivityStartDate)
+    const end = fmtDate(stmt.ActivityEndDate)
+    const to = owner?.OwnerMainEmail || ''
+    if (!to && !confirm('No email on file for this owner. Open a blank email anyway?')) return
+    const subject = `GGRC Casita Statement for ${start} - ${end}`
+    const body =
+      `Attached is your GGRC Casita Statement for ${start} - ${end}.\n\n` +
+      `For questions, please contact Amy Giblin at amy.gibline@gardenofthegodsresort.com`
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  }
+
+  const [updating, setUpdating] = useState(false)
+  async function saveAndUpdate() {
+    if (!confirm('Refresh saved line items for ALL statements from current revenue data, and update Gross / Owner Payout in the statement list? Manual adjustments are preserved.')) return
+    setUpdating(true)
+    try {
+      const res = await api.statements.recalc()
+      alert(`Updated ${res.statements} statement(s) (${res.lineItems} line items).`)
+      window.location.reload()
+    } catch (e) {
+      alert(e.message)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  async function deleteStatement() {
+    if (!confirm(`Delete statement ${stmt.StatementNumber}? This removes its saved line items.`)) return
+    try {
+      await api.statements.delete(statementId)
+      navigate(`/lots/${lotId}`)
+    } catch (e) {
+      alert(e.message)
+    }
+  }
+
   async function deleteAdj(a) {
     if (!confirm('Delete this adjustment?')) return
     try {
@@ -78,16 +141,30 @@ export default function StatementDetail() {
   const details = stmt.Details ?? []
   const fees = stmt.Fees ?? []
   const expenses = stmt.Expenses ?? []
-  const stats = stmt.Statistics ?? {}
+
+  const roomStats = stats?.RoomStats ?? []
+  const revenueStats = stats?.RevenueStats ?? []
+  const yrRoomTotals = {}
+  roomStats.forEach(r => { const k = `${r.Year}|${r.RoomNumber}`; yrRoomTotals[k] = (yrRoomTotals[k] || 0) + r.TotalNights })
+  const roomRows = roomStats.map(r => ({ ...r, TotalForYearAndRoom: yrRoomTotals[`${r.Year}|${r.RoomNumber}`] }))
+  const grandNights = roomStats.reduce((a, r) => a + (r.TotalNights || 0), 0)
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/lots" className="hover:text-navy-700">Lots</Link>
-        <span>/</span>
-        <Link to={`/lots/${lotId}`} className="hover:text-navy-700">Lot #{lot?.LotNumber}</Link>
-        <span>/</span>
-        <span className="text-gray-800 font-medium">Statement #{stmt.StatementNumber}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Link to="/lots" className="hover:text-navy-700">Lots</Link>
+          <span>/</span>
+          <Link to={`/lots/${lotId}`} className="hover:text-navy-700">Lot #{lot?.LotNumber}</Link>
+          <span>/</span>
+          <span className="text-gray-800 font-medium">Statement #{stmt.StatementNumber}</span>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn-secondary btn-sm" onClick={() => navigate(`/lots/${lotId}/statements/${statementId}/print`)}>Print Statement</button>
+          <button className="btn-secondary btn-sm" onClick={emailStatement}>Email Statement</button>
+          <button className="btn-primary btn-sm" onClick={saveAndUpdate} disabled={updating}>{updating ? 'Updating…' : 'Save & Update'}</button>
+          <button className="btn-danger btn-sm" onClick={deleteStatement}>Delete Statement</button>
+        </div>
       </div>
 
       {/* Statement header */}
@@ -129,8 +206,8 @@ export default function StatementDetail() {
       {/* Tabs */}
       <div className="flex border-b border-gray-200 gap-1">
         {[
-          ['invoice', 'Lot Invoices'],
-          ['statistics', 'Lot Invoice Statistics']
+          ['statement', 'Lot Statements'],
+          ['statistics', 'Lot Statement Statistics']
         ].map(([key, label]) => (
           <button
             key={key}
@@ -144,11 +221,11 @@ export default function StatementDetail() {
         ))}
       </div>
 
-      {tab === 'invoice' && (
+      {tab === 'statement' && (
         <div className="space-y-4">
           {/* Summary */}
           <div className="card p-4">
-            <h3 className="section-title">Invoice Summary by Stay Dates</h3>
+            <h3 className="section-title">Statement Summary by Stay Dates</h3>
             <div className="grid grid-cols-3 gap-3 text-sm">
               {[
                 ['Gross Revenue', fmtCur(summary.GrossRevenue)],
@@ -171,10 +248,40 @@ export default function StatementDetail() {
             </div>
           </div>
 
+          {/* Adjustments */}
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between p-3 border-b border-gray-200">
+              <h3 className="section-title mb-0">Lot Statement Adjustments</h3>
+              <button
+                className="btn-primary btn-sm"
+                onClick={() => { setAdjForm({ AdjustmentDate: new Date().toISOString().split('T')[0] }); setAdjModal('create') }}
+              >
+                + Add Adjustment
+              </button>
+            </div>
+            <DataTable
+              columns={[
+                { key: 'Category', label: 'Category' },
+                { key: 'AdjustmentType', label: 'Type' },
+                { key: 'AdjustmentName', label: 'Name' },
+                { key: 'AdjustmentDate', label: 'Date', render: fmtDate },
+                { key: 'AdjustmentAmount', label: 'Amount', render: fmtNeg }
+              ]}
+              rows={adjustments}
+              actions={(a) => (
+                <>
+                  <button className="btn-secondary btn-sm" onClick={() => { setAdjForm({ ...a }); setAdjModal('edit') }}>Edit</button>
+                  <button className="btn-danger btn-sm" onClick={() => deleteAdj(a)}>Del</button>
+                </>
+              )}
+              emptyMessage="No adjustments."
+            />
+          </div>
+
           {/* Line items */}
           <div className="card overflow-hidden">
             <div className="p-3 border-b border-gray-200">
-              <h3 className="section-title mb-0">Invoice Details by Stay Dates ({details.length} records)</h3>
+              <h3 className="section-title mb-0">Statement Details by Stay Dates ({details.length} records)</h3>
             </div>
             <DataTable
               columns={[
@@ -232,92 +339,50 @@ export default function StatementDetail() {
             </div>
           )}
 
-          {/* Adjustments */}
-          <div className="card overflow-hidden">
-            <div className="flex items-center justify-between p-3 border-b border-gray-200">
-              <h3 className="section-title mb-0">Lot Invoice Adjustments</h3>
-              <button
-                className="btn-primary btn-sm"
-                onClick={() => { setAdjForm({ AdjustmentDate: new Date().toISOString().split('T')[0] }); setAdjModal('create') }}
-              >
-                + Add Adjustment
-              </button>
-            </div>
-            <DataTable
-              columns={[
-                { key: 'Category', label: 'Category' },
-                { key: 'AdjustmentType', label: 'Type' },
-                { key: 'AdjustmentName', label: 'Name' },
-                { key: 'AdjustmentDate', label: 'Date', render: fmtDate },
-                { key: 'AdjustmentAmount', label: 'Amount', render: fmtNeg }
-              ]}
-              rows={adjustments}
-              actions={(a) => (
-                <>
-                  <button className="btn-secondary btn-sm" onClick={() => { setAdjForm({ ...a }); setAdjModal('edit') }}>Edit</button>
-                  <button className="btn-danger btn-sm" onClick={() => deleteAdj(a)}>Del</button>
-                </>
-              )}
-              emptyMessage="No adjustments."
-            />
-          </div>
         </div>
       )}
 
       {tab === 'statistics' && (
         <div className="space-y-4">
-          {stats.NightsByRoom && (
-            <div className="card overflow-hidden">
-              <div className="p-3 border-b"><h3 className="section-title mb-0">Rental Nights by Room</h3></div>
-              <DataTable
-                columns={[
-                  { key: 'Year', label: 'Year' },
-                  { key: 'Month', label: 'Month' },
-                  { key: 'RoomNumber', label: 'Room #' },
-                  { key: 'StatCategory', label: 'Category' },
-                  { key: 'TotalNights', label: 'Total Nights' },
-                  { key: 'TotalForYearAndRoom', label: 'YTD for Room' }
-                ]}
-                rows={stats.NightsByRoom ?? []}
-              />
-            </div>
-          )}
-          {stats.ExpenseYTD && (
-            <div className="card overflow-hidden">
-              <div className="p-3 border-b"><h3 className="section-title mb-0">Expense Statistics YTD</h3></div>
-              <DataTable
-                columns={[
-                  { key: 'Year', label: 'Year' },
-                  { key: 'YTDReservationFees', label: 'Reservation Fees', render: fmtCur },
-                  { key: 'YTDCreditCardFees', label: 'CC Fees', render: fmtCur },
-                  { key: 'YTDCableInternetFees', label: 'Cable/Internet', render: fmtCur },
-                  { key: 'YTDCleaningFees', label: 'Cleaning Fees', render: fmtCur },
-                  { key: 'YTDTotalExpenses', label: 'Total Expenses', render: fmtCur }
-                ]}
-                rows={stats.ExpenseYTD ?? []}
-              />
-            </div>
-          )}
-          {stats.RevenueYTD && (
-            <div className="card overflow-hidden">
-              <div className="p-3 border-b"><h3 className="section-title mb-0">Revenue Statistics YTD</h3></div>
-              <DataTable
-                columns={[
-                  { key: 'Year', label: 'Year' },
-                  { key: 'YTDGross', label: 'YTD Gross', render: fmtCur },
-                  { key: 'YTDOwnerSplit', label: 'YTD Owner Split', render: fmtCur },
-                  { key: 'YTDAvgDailyRate', label: 'Avg Daily Rate', render: fmtCur },
-                  { key: 'YTDReserveAdjustments', label: 'Reserve Adj', render: fmtCur },
-                  { key: 'YTDAdjustments', label: 'Adjustments', render: fmtNeg },
-                  { key: 'YTDOwnerPayout', label: 'YTD Payout', render: fmtCur }
-                ]}
-                rows={stats.RevenueYTD ?? []}
-              />
-            </div>
-          )}
-          {!stats.NightsByRoom && !stats.ExpenseYTD && !stats.RevenueYTD && (
-            <div className="card p-8 text-center text-gray-400">No statistics available for this statement.</div>
-          )}
+          {/* Room Statistics */}
+          <div className="card overflow-hidden">
+            <div className="p-3 border-b"><h3 className="section-title mb-0">Room Statistics</h3></div>
+            <DataTable
+              columns={[
+                { key: 'Year', label: 'Year' },
+                { key: 'Month', label: 'Month' },
+                { key: 'RoomNumber', label: 'Room #' },
+                { key: 'TotalNights', label: 'Total Nights' },
+                { key: 'TotalForYearAndRoom', label: 'Total for Year & Room' }
+              ]}
+              rows={roomRows}
+              emptyMessage="No room statistics."
+            />
+            {roomRows.length > 0 && (
+              <div className="px-3 py-2 text-sm font-semibold border-t bg-gray-50 flex justify-between">
+                <span>Grand Total Nights</span>
+                <span>{grandNights}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Revenue & Expense Statistics */}
+          <div className="card overflow-hidden">
+            <div className="p-3 border-b"><h3 className="section-title mb-0">Revenue &amp; Expense Statistics</h3></div>
+            <DataTable
+              columns={[
+                { key: 'Year', label: 'Year' },
+                { key: 'YTDGross', label: 'YTD Gross', render: fmtCur },
+                { key: 'YTDOwnerSplit', label: 'YTD Owner Split', render: fmtCur },
+                { key: 'YTDAvgDailyRate', label: 'YTD Avg Daily Rate', render: fmtCur },
+                { key: 'YTDReserveAdjustments', label: 'YTD Reserve Adjustments', render: fmtNeg },
+                { key: 'YTDAdjustments', label: 'YTD Adjustments', render: fmtNeg },
+                { key: 'YTDOwnerPayout', label: 'YTD Owner Payout', render: fmtCur }
+              ]}
+              rows={revenueStats}
+              emptyMessage="No revenue statistics."
+            />
+          </div>
         </div>
       )}
 
@@ -340,6 +405,15 @@ export default function StatementDetail() {
                     value={adjForm[key] ?? ''}
                     onChange={(e) => setAdjForm(f => ({ ...f, [key]: e.target.value }))}
                   />
+                ) : key === 'AdjustmentType' ? (
+                  <select
+                    className="input"
+                    value={adjForm[key] ?? ''}
+                    onChange={(e) => setAdjForm(f => ({ ...f, [key]: e.target.value }))}
+                  >
+                    <option value="">—</option>
+                    {ADJ_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 ) : (
                   <input
                     type={type}

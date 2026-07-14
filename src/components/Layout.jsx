@@ -40,7 +40,7 @@ const groups = [
     Icon: IconLot,
     items: [
       { label: 'Lot Information',        to: '/lots' },
-      { label: 'Owner Information',      to: '/lots?view=owners' },
+      { label: 'Owner Information',      to: '/owners' },
       { label: 'Lot & Room Info',        to: '/lots?view=rooms' },
       { label: 'Generate Statements',    to: '/statements/generate' }
     ]
