@@ -56,6 +56,11 @@
 /* Print: isolate the statement so Print / Save PDF matches the on-screen view.
    Hides app chrome (top bar, sidebar, toolbar) and removes the flex/overflow
    constraints that otherwise clip the printout to a single screen. */
+/* Remove the browser-generated header/footer (date, title, URL, page #).
+   With no page margin the browser has no room to draw them; page padding is
+   applied to the content below instead. */
+@page { margin: 0; }
+
 @media print {
   .no-print { display: none !important; }
 
@@ -70,7 +75,8 @@
     height: auto !important;
     overflow: visible !important;
   }
-  .app-main { padding: 0 !important; }
+  /* Page margins live here (not in @page) so no browser header/footer appears */
+  .app-main { padding: 12mm !important; }
 
   /* Keep teal table headers and shaded rows in the printout */
   * {

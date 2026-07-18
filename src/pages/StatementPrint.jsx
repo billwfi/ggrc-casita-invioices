@@ -193,11 +193,11 @@ export default function StatementPrint() {
                    aligns={['left', 'right', 'right']}
                    rows={[['Standard Monthly', cur(cable), cur(cleaning)]]} />
           </div>
-          <Table headers={['Category', 'Adjustment Type', 'Adjustment Name', 'Adjustment Date', 'Adjustment Amount']}
-                 aligns={['left', 'left', 'left', 'left', 'right']}
-                 rows={adjustments.length
-                   ? adjustments.map(a => [a.Category, a.AdjustmentType, a.AdjustmentName, fmtDate(a.AdjustmentDate), cur(a.AdjustmentAmount)])
-                   : [['—', '', '', '', '']]} />
+          {adjustments.length > 0 && (
+            <Table headers={['Category', 'Adjustment Type', 'Adjustment Name', 'Adjustment Date', 'Adjustment Amount']}
+                   aligns={['left', 'left', 'left', 'left', 'right']}
+                   rows={adjustments.map(a => [a.Category, a.AdjustmentType, a.AdjustmentName, fmtDate(a.AdjustmentDate), cur(a.AdjustmentAmount)])} />
+          )}
         </Section>
 
         <Section title="Rental Activity Detail">
