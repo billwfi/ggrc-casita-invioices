@@ -52,3 +52,34 @@
     @apply bg-navy-800 text-white font-medium;
   }
 }
+
+/* Print: isolate the statement so Print / Save PDF matches the on-screen view.
+   Hides app chrome (top bar, sidebar, toolbar) and removes the flex/overflow
+   constraints that otherwise clip the printout to a single screen. */
+@media print {
+  .no-print { display: none !important; }
+
+  /* Collapse the app shell so the printed content flows down the full page */
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .app-shell, .app-body, .app-main {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .app-main { padding: 0 !important; }
+
+  /* Keep teal table headers and shaded rows in the printout */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

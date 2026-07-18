@@ -85,16 +85,16 @@ export default function Layout({ children }) {
   const location = useLocation()
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="app-shell flex flex-col h-screen">
       {/* Top bar */}
-      <header className="bg-navy-900 text-white flex items-center px-4 h-12 flex-shrink-0 shadow z-10">
+      <header className="no-print bg-navy-900 text-white flex items-center px-4 h-12 flex-shrink-0 shadow z-10">
         <span className="font-bold text-base tracking-wide mr-2 text-blue-400">GGRC</span>
         <span className="text-gray-400 text-xs font-medium">Garden of the Gods Resort — Casita Invoices</span>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="app-body flex flex-1 overflow-hidden">
         {/* Left sidebar */}
-        <nav className="w-60 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: '#152a50' }}>
+        <nav className="no-print w-60 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: '#152a50' }}>
           <div className="py-3 space-y-1">
             {groups.map((group) => {
               const isGroupActive = group.items.some(item => isItemActive(item, location))
@@ -142,7 +142,7 @@ export default function Layout({ children }) {
         </nav>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto bg-gray-50 p-4">
+        <main className="app-main flex-1 overflow-y-auto bg-gray-50 p-4">
           {children}
         </main>
       </div>
