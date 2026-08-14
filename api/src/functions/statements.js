@@ -146,9 +146,10 @@ app.http('statements', {
             : null
 
           // Snapshot fees are signed (add them); legacy fees are magnitudes (subtract them).
+          // Adjustments are signed too: negative reduces the payout, positive increases it.
           const ownerPayout = fromSnapshot
-            ? split + resFee + ccFee - cableFee - cleaningFee - adjs - totalReserveAdjustments
-            : split - resFee - ccFee - cable - cleaning - reserve - adjs
+            ? split + resFee + ccFee - cableFee - cleaningFee + adjs - totalReserveAdjustments
+            : split - resFee - ccFee - cable - cleaning - reserve + adjs
 
           return ok({
             ...stmt,
@@ -223,7 +224,7 @@ app.http('statements', {
             const ccFee = Number(li.CcFee) || 0
             const adjs = adjMap[s.StatementID] || 0
             const reserveApplied = applyReserve2 ? round(split * 0.05) : 0
-            const payout = split + resFee + ccFee - STD_CABLE - STD_CLEANING - adjs - reserveApplied
+            const payout = split + resFee + ccFee - STD_CABLE - STD_CLEANING + adjs - reserveApplied
             return { ...s, GrossRevenue: round(Number(li.Gross) || 0), OwnerPayout: round(payout) }
           })
           return ok(enriched)
