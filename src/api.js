@@ -76,7 +76,9 @@ export const api = {
     create: (data) => post('statements', data),
     delete: (id) => del(`statements/${id}`),
     recalc: () => post('statements/recalc', {}),
-    generateAll: (data) => post('statements/generate-all', data)
+    generateAll: (data) => post('statements/generate-all', data),
+    // Server-side send: builds the PDF and mails it via Azure Communication Services.
+    email: (id, to) => post(`send-statement/${id}`, to ? { to } : {})
   },
   adjustments: {
     getByStatement: (statementId) => get(`adjustments?statementId=${statementId}`),

@@ -2,10 +2,16 @@
   "name": "ggrc-casita-api",
   "version": "1.0.0",
   "main": "src/functions/*.js",
-  "scripts": { "start": "func start" },
-  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "func start"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@azure/functions": "^4.5.0",
-    "mssql": "^11.0.1"
+    "mssql": "^11.0.1",
+    "@azure/communication-email": "^1.0.0",
+    "pdfkit": "^0.15.0"
   }
 }

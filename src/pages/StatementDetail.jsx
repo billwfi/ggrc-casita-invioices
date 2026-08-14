@@ -86,16 +86,27 @@ export default function StatementDetail() {
     }
   }
 
-  function emailStatement() {
+  // Sent server-side so the message can carry the branded HTML body and the PDF
+  // attachment — a mailto: hand-off supports neither.
+  const [emailing, setEmailing] = useState(false)
+  async function emailStatement() {
     const start = fmtDate(stmt.ActivityStartDate)
     const end = fmtDate(stmt.ActivityEndDate)
-    const to = owner?.OwnerMainEmail || ''
-    if (!to && !confirm('No email on file for this owner. Open a blank email anyway?')) return
-    const subject = `GGRC Casita Statement for ${start} - ${end}`
-    const body =
-      `Attached is your GGRC Casita Statement for ${start} - ${end}.\n\n` +
-      `For questions, please contact Amy Giblin at amy.giblin@gardenofthegodsresort.com`
-    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    let to = owner?.OwnerMainEmail || ''
+    if (!to) {
+      to = prompt('No email on file for this owner. Send the statement to:') || ''
+      if (!to.trim()) return
+    }
+    if (!confirm(`Email the statement for ${start} – ${end} to ${to}?\n\nA PDF copy will be attached.`)) return
+    setEmailing(true)
+    try {
+      const res = await api.statements.email(statementId, to)
+      alert(`Statement emailed to ${res.to}.\nAttachment: ${res.attachment}`)
+    } catch (e) {
+      alert(`Could not send the statement.\n\n${e.message}`)
+    } finally {
+      setEmailing(false)
+    }
   }
 
   const [updating, setUpdating] = useState(false)
@@ -161,7 +172,9 @@ export default function StatementDetail() {
         </div>
         <div className="flex gap-2">
           <button className="btn-secondary btn-sm" onClick={() => navigate(`/lots/${lotId}/statements/${statementId}/print`)}>Print Statement</button>
-          <button className="btn-secondary btn-sm" onClick={emailStatement}>Email Statement</button>
+          <button className="btn-secondary btn-sm" onClick={emailStatement} disabled={emailing}>
+            {emailing ? 'Sending…' : 'Email Statement'}
+          </button>
           <button className="btn-primary btn-sm" onClick={saveAndUpdate} disabled={updating}>{updating ? 'Updating…' : 'Save & Update'}</button>
           <button className="btn-danger btn-sm" onClick={deleteStatement}>Delete Statement</button>
         </div>
