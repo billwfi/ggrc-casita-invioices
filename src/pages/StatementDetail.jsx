@@ -236,6 +236,7 @@ export default function StatementDetail() {
                 ['Maintenance & Cleaning', fmtNeg(summary.MaintenanceCleaningFee)],
                 ['5% Reserve Amount', fmtNeg(summary.ReserveAmount)],
                 ['Total Payout Adjustments', fmtNeg(summary.TotalAdjustments)],
+                ['Total Rate Adjustments (in Gross)', fmtNeg(summary.TotalRateAdjustments)],
                 ['Total Reserve Adjustments', fmtNeg(summary.TotalReserveAdjustments)],
                 ['Reserve Balance (After)', fmtCur(summary.ReserveBalance)],
                 ['Owner Payout', fmtCur(summary.OwnerPayout)]

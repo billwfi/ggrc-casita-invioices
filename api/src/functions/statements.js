@@ -4,11 +4,22 @@ const { getPool, sql, ok, err } = require('../db')
 const round = (v) => Math.round(v * 100) / 100
 const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100
 
+// Rates applied to the owner split. The owner split is 50% of gross revenue.
+const RES_RATE = 0.065, CC_RATE = 0.022, OWNER_SHARE = 0.5
+
 // Adjustment types that draw against the reserve balance rather than the owner payout.
 function isReserveAdjustment(a) {
   const t = String(a.AdjustmentType || '').toLowerCase()
   const c = String(a.Category || '').toLowerCase()
   return c === 'reserve' || t === 'replacement ff&e' || t === 'reserve adjustment'
+}
+
+// Room rate adjustments correct the underlying room revenue, so they flow through
+// gross -> owner split -> the percentage fees, rather than being a flat payout line.
+function isRateAdjustment(a) {
+  const t = String(a.AdjustmentType || '').toLowerCase()
+  const c = String(a.Category || '').toLowerCase()
+  return c === 'room rate' || t === 'room rate adjustment'
 }
 
 // Reserve math: reserve adjustments are signed (negative reduces the balance); when
@@ -141,11 +152,23 @@ app.http('statements', {
           const cleaning = details.reduce((a, r) => a + (r.CleaningFee  || 0), 0)
           const reserve  = details.reduce((a, r) => a + (r.ReserveAmount || 0), 0)
 
-          // Reserve-type adjustments affect the reserve balance; all others affect payout.
-          const reserveAdjTotal = adjRes.recordset.filter(isReserveAdjustment)
-            .reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
-          const payoutAdjTotal = adjRes.recordset.filter(r => !isReserveAdjustment(r))
-            .reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
+          // Three buckets: reserve adjustments hit the reserve balance, room rate
+          // adjustments restate gross revenue, everything else is a flat payout line.
+          const sumAdj = (rows) => rows.reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
+          const reserveAdjTotal = sumAdj(adjRes.recordset.filter(isReserveAdjustment))
+          const rateAdjTotal    = sumAdj(adjRes.recordset.filter(r => !isReserveAdjustment(r) && isRateAdjustment(r)))
+          const payoutAdjTotal  = sumAdj(adjRes.recordset.filter(r => !isReserveAdjustment(r) && !isRateAdjustment(r)))
+
+          // A room rate adjustment restates room revenue: gross moves by the full
+          // amount, the owner split by its 50% share, and the reservation / credit
+          // card fees are recalculated on that additional split.
+          const splitDelta   = r2(rateAdjTotal * OWNER_SHARE)
+          const grossAdj     = r2(gross + rateAdjTotal)
+          const splitAdj     = r2(split + splitDelta)
+          // Snapshot fees are signed (negative = deduction); legacy fees are magnitudes.
+          const feeSign      = fromSnapshot ? -1 : 1
+          const resFeeAdj    = r2(resFee + feeSign * splitDelta * RES_RATE)
+          const ccFeeAdj     = r2(ccFee  + feeSign * splitDelta * CC_RATE)
 
           // Owner info for reserve balance
           const ownerRes = await pool.request()
@@ -166,7 +189,7 @@ app.http('statements', {
           const currentReserve = owner.ReserveBalance != null ? Number(owner.ReserveBalance) : null
           const applied = stmt.ReserveAppliedAt != null
           const effectiveBefore = applied ? Number(stmt.ReserveBalanceBefore) : currentReserve
-          const calc = computeReserve(effectiveBefore, reserveAdjTotal, split, fromSnapshot && reserveOn)
+          const calc = computeReserve(effectiveBefore, reserveAdjTotal, splitAdj, fromSnapshot && reserveOn)
           const fivePct = calc.fivePct
           const fivePctApplied = calc.fivePctApplied
           const reserveBalanceBefore = applied ? Number(stmt.ReserveBalanceBefore) : currentReserve
@@ -174,22 +197,24 @@ app.http('statements', {
 
           // Snapshot fees are signed (add them); legacy fees are magnitudes (subtract them).
           // Adjustments are signed too: negative reduces the payout, positive increases it.
+          // Rate adjustments are already folded into splitAdj / resFeeAdj / ccFeeAdj.
           const ownerPayout = fromSnapshot
-            ? split + resFee + ccFee - cableFee - cleaningFee + payoutAdjTotal - fivePctApplied
-            : split - resFee - ccFee - cable - cleaning - reserve + payoutAdjTotal
+            ? splitAdj + resFeeAdj + ccFeeAdj - cableFee - cleaningFee + payoutAdjTotal - fivePctApplied
+            : splitAdj - resFeeAdj - ccFeeAdj - cable - cleaning - reserve + payoutAdjTotal
 
           return ok({
             ...stmt,
             Summary: {
-              GrossRevenue:    round(gross),
-              OwnerSplit:      round(split),
-              ReservationFee:  round(resFee),
-              CreditCardFee:   round(ccFee),
+              GrossRevenue:    round(grossAdj),
+              OwnerSplit:      round(splitAdj),
+              ReservationFee:  round(resFeeAdj),
+              CreditCardFee:   round(ccFeeAdj),
               CableInternetFee: cableFee,
               MaintenanceCleaningFee: cleaningFee,
               ReserveAmount:   fivePct,
               ReserveAmountApplied: fivePctApplied,
               TotalAdjustments: round(payoutAdjTotal),
+              TotalRateAdjustments: round(rateAdjTotal),
               TotalReserveAdjustments: round(reserveAdjTotal),
               CurrentReserveBalance: currentReserve,
               ReserveBalanceBefore: reserveBalanceBefore,
@@ -230,7 +255,11 @@ app.http('statements', {
                WHERE s.LotID = @lotId
                GROUP BY li.StatementID`),
             pool.request().input('lotId', sql.Int, parseInt(lotId)).query(
-              `SELECT a.StatementID, SUM(a.AdjustmentAmount) AS Adj
+              `SELECT a.StatementID,
+                      SUM(CASE WHEN a.Category = 'Room Rate' OR a.AdjustmentType = 'Room Rate Adjustment'
+                               THEN a.AdjustmentAmount ELSE 0 END) AS RateAdj,
+                      SUM(CASE WHEN a.Category = 'Room Rate' OR a.AdjustmentType = 'Room Rate Adjustment'
+                               THEN 0 ELSE a.AdjustmentAmount END) AS Adj
                FROM AppAdjustments a
                JOIN AppStatements s ON s.StatementID = a.StatementID
                WHERE s.LotID = @lotId AND a.StatementID IS NOT NULL
@@ -243,6 +272,7 @@ app.http('statements', {
 
           const liMap = {}; for (const x of liRes.recordset) liMap[x.StatementID] = x
           const adjMap = {}; for (const x of adjRes2.recordset) adjMap[x.StatementID] = Number(x.Adj) || 0
+          const rateMap = {}; for (const x of adjRes2.recordset) rateMap[x.StatementID] = Number(x.RateAdj) || 0
           const owner2 = ownerRes.recordset[0] ?? {}
           const reserveOn2 = String(owner2.ReserveAccount || '').toLowerCase().startsWith('y')
           const currentReserve2 = owner2.ReserveBalance != null ? Number(owner2.ReserveBalance) : null
@@ -252,13 +282,16 @@ app.http('statements', {
           const enriched = stmts.map(s => {
             const li = liMap[s.StatementID]
             if (!li) return { ...s, GrossRevenue: null, OwnerPayout: null }
-            const split = Number(li.Split) || 0
-            const resFee = Number(li.ResFee) || 0
-            const ccFee = Number(li.CcFee) || 0
+            // Room rate adjustments restate gross/split and their percentage fees.
+            const rateAdj = rateMap[s.StatementID] || 0
+            const splitDelta = r2(rateAdj * OWNER_SHARE)
+            const split = (Number(li.Split) || 0) + splitDelta
+            const resFee = (Number(li.ResFee) || 0) - splitDelta * RES_RATE
+            const ccFee = (Number(li.CcFee) || 0) - splitDelta * CC_RATE
             const adjs = adjMap[s.StatementID] || 0
             const reserveApplied = applyReserve2 ? round(split * 0.05) : 0
             const payout = split + resFee + ccFee - STD_CABLE - STD_CLEANING + adjs - reserveApplied
-            return { ...s, GrossRevenue: round(Number(li.Gross) || 0), OwnerPayout: round(payout) }
+            return { ...s, GrossRevenue: round((Number(li.Gross) || 0) + rateAdj), OwnerPayout: round(payout) }
           })
           return ok(enriched)
         }
