@@ -94,7 +94,7 @@ export default function StatementDetail() {
     const subject = `GGRC Casita Statement for ${start} - ${end}`
     const body =
       `Attached is your GGRC Casita Statement for ${start} - ${end}.\n\n` +
-      `For questions, please contact Amy Giblin at amy.gibline@gardenofthegodsresort.com`
+      `For questions, please contact Amy Giblin at amy.giblin@gardenofthegodsresort.com`
     window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
   }
 

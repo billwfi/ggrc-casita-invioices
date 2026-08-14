@@ -88,7 +88,10 @@ export default function Layout({ children }) {
     <div className="app-shell flex flex-col h-screen">
       {/* Top bar */}
       <header className="no-print bg-navy-900 text-white flex items-center px-4 h-12 flex-shrink-0 shadow z-10">
-        <span className="font-bold text-base tracking-wide mr-2 text-blue-400">GGRC</span>
+        {/* Logo sits on white so the navy wordmark stays legible on the dark bar. */}
+        <div className="bg-white rounded px-2 py-1 flex items-center mr-3">
+          <img src="/ggrc-logo.png" alt="Garden of the Gods Resort — Wellness Club" className="h-7 w-auto" />
+        </div>
         <span className="text-gray-400 text-xs font-medium">Garden of the Gods Resort — Casita Invoices</span>
       </header>
 
