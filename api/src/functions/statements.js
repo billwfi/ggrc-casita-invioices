@@ -2,6 +2,28 @@ const { app } = require('@azure/functions')
 const { getPool, sql, ok, err } = require('../db')
 
 const round = (v) => Math.round(v * 100) / 100
+const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100
+
+// Adjustment types that draw against the reserve balance rather than the owner payout.
+function isReserveAdjustment(a) {
+  const t = String(a.AdjustmentType || '').toLowerCase()
+  const c = String(a.Category || '').toLowerCase()
+  return c === 'reserve' || t === 'replacement ff&e' || t === 'reserve adjustment'
+}
+
+// Reserve math: reserve adjustments are signed (negative reduces the balance); when
+// the post-adjustment balance is under $10,000, the 5% reserve (of owner split) is
+// applied to top it back up — capped so it never exceeds $10,000.
+function computeReserve(before, reserveAdjTotal, split, reserveOn) {
+  const fivePct = reserveOn ? r2(split * 0.05) : 0
+  if (before == null) return { fivePct, fivePctApplied: 0, after: null, balanceAfterAdj: null }
+  const balanceAfterAdj = r2(before + (reserveAdjTotal || 0))
+  let fivePctApplied = 0
+  if (reserveOn && balanceAfterAdj < 10000) {
+    fivePctApplied = Math.max(0, Math.min(fivePct, r2(10000 - balanceAfterAdj)))
+  }
+  return { fivePct, fivePctApplied, after: r2(balanceAfterAdj + fivePctApplied), balanceAfterAdj }
+}
 
 function aggregateFees(details) {
   const map = {}
@@ -118,7 +140,12 @@ app.http('statements', {
           const cable    = details.reduce((a, r) => a + (r.CableInternetFee || 0), 0)
           const cleaning = details.reduce((a, r) => a + (r.CleaningFee  || 0), 0)
           const reserve  = details.reduce((a, r) => a + (r.ReserveAmount || 0), 0)
-          const adjs     = adjRes.recordset.reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
+
+          // Reserve-type adjustments affect the reserve balance; all others affect payout.
+          const reserveAdjTotal = adjRes.recordset.filter(isReserveAdjustment)
+            .reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
+          const payoutAdjTotal = adjRes.recordset.filter(r => !isReserveAdjustment(r))
+            .reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
 
           // Owner info for reserve balance
           const ownerRes = await pool.request()
@@ -132,24 +159,24 @@ app.http('statements', {
           const cableFee    = fromSnapshot ? STD_CABLE : round(cable)
           const cleaningFee = fromSnapshot ? STD_CLEANING : round(cleaning)
 
-          // 5% reserve is calculated on the owner split. It is only applied (moved to
-          // reserve and deducted from payout) when the reserve balance is under $10,000.
+          // Reserve: reserve-type adjustments always reduce the reserve; the 5% of split
+          // is applied (to reserve + deducted from payout) only when the post-deduction
+          // balance is under $10,000. Before/After freeze once applied to the owner.
           const reserveOn = String(owner.ReserveAccount || '').toLowerCase().startsWith('y')
           const currentReserve = owner.ReserveBalance != null ? Number(owner.ReserveBalance) : null
-          const reserveAmount = fromSnapshot
-            ? (reserveOn ? round(split * 0.05) : 0)
-            : round(reserve)
-          const applyReserve = reserveOn && currentReserve != null && currentReserve < 10000
-          const totalReserveAdjustments = fromSnapshot ? (applyReserve ? reserveAmount : 0) : 0
-          const reserveBalanceAfter = currentReserve != null
-            ? round(currentReserve + totalReserveAdjustments)
-            : null
+          const applied = stmt.ReserveAppliedAt != null
+          const effectiveBefore = applied ? Number(stmt.ReserveBalanceBefore) : currentReserve
+          const calc = computeReserve(effectiveBefore, reserveAdjTotal, split, fromSnapshot && reserveOn)
+          const fivePct = calc.fivePct
+          const fivePctApplied = calc.fivePctApplied
+          const reserveBalanceBefore = applied ? Number(stmt.ReserveBalanceBefore) : currentReserve
+          const reserveBalanceAfter = applied ? Number(stmt.ReserveBalanceAfter) : calc.after
 
           // Snapshot fees are signed (add them); legacy fees are magnitudes (subtract them).
           // Adjustments are signed too: negative reduces the payout, positive increases it.
           const ownerPayout = fromSnapshot
-            ? split + resFee + ccFee - cableFee - cleaningFee + adjs - totalReserveAdjustments
-            : split - resFee - ccFee - cable - cleaning - reserve + adjs
+            ? split + resFee + ccFee - cableFee - cleaningFee + payoutAdjTotal - fivePctApplied
+            : split - resFee - ccFee - cable - cleaning - reserve + payoutAdjTotal
 
           return ok({
             ...stmt,
@@ -160,11 +187,16 @@ app.http('statements', {
               CreditCardFee:   round(ccFee),
               CableInternetFee: cableFee,
               MaintenanceCleaningFee: cleaningFee,
-              ReserveAmount:   reserveAmount,
-              TotalAdjustments: round(adjs),
-              TotalReserveAdjustments: round(totalReserveAdjustments),
+              ReserveAmount:   fivePct,
+              ReserveAmountApplied: fivePctApplied,
+              TotalAdjustments: round(payoutAdjTotal),
+              TotalReserveAdjustments: round(reserveAdjTotal),
               CurrentReserveBalance: currentReserve,
+              ReserveBalanceBefore: reserveBalanceBefore,
+              ReserveBalanceAfter: reserveBalanceAfter,
               ReserveBalance:  reserveBalanceAfter,
+              ReserveApplied: applied,
+              ReserveAppliedAt: stmt.ReserveAppliedAt ?? null,
               OwnerPayout:     round(ownerPayout)
             },
             Details: details,
@@ -202,6 +234,7 @@ app.http('statements', {
                FROM AppAdjustments a
                JOIN AppStatements s ON s.StatementID = a.StatementID
                WHERE s.LotID = @lotId AND a.StatementID IS NOT NULL
+                 AND NOT (a.Category = 'Reserve' OR a.AdjustmentType IN ('Replacement FF&E','Reserve Adjustment'))
                GROUP BY a.StatementID`).catch(() => ({ recordset: [] })),
             pool.request().input('lotId', sql.Int, parseInt(lotId)).query(
               `SELECT TOP 1 ReserveAccount, ReserveBalance FROM AppOwners
@@ -364,6 +397,61 @@ app.http('statements', {
       return err('Method not allowed', 405)
     } catch (e) {
       console.error('statements:', e.message)
+      return err(e.message)
+    }
+  }
+})
+
+// Separate registration: the three-segment route cannot be matched by 'statements/{id?}'.
+// Freezes this statement's reserve Before/After and writes the new balance to the owner.
+app.http('statementsApplyReserve', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'statements/{id}/apply-reserve',
+  handler: async (request, context) => {
+    if (request.method === 'OPTIONS') return { status: 200 }
+    const id = request.params.id
+    if (!id || !/^\d+$/.test(id)) return err('Invalid statement id', 400)
+
+    try {
+      const pool = await getPool()
+
+      const sres = await pool.request().input('id', sql.Int, parseInt(id))
+        .query('SELECT * FROM AppStatements WHERE StatementID = @id')
+      if (!sres.recordset.length) return err('Statement not found', 404)
+      const st = sres.recordset[0]
+      if (st.ReserveAppliedAt) return err('Reserve has already been applied for this statement.', 409)
+
+      const oRes = await pool.request().input('lotId', sql.Int, st.LotID)
+        .query('SELECT TOP 1 OwnerID, ReserveAccount, ReserveBalance FROM AppOwners WHERE LotID=@lotId AND OwnershipEndDate IS NULL ORDER BY DateOfPurchase DESC')
+      const o = oRes.recordset[0]
+      if (!o) return err('No active owner found for this lot.', 400)
+      if (!String(o.ReserveAccount || '').toLowerCase().startsWith('y')) return err('Owner does not have a reserve account.', 400)
+
+      const before = o.ReserveBalance != null ? Number(o.ReserveBalance) : 0
+      const liRes = await pool.request().input('id', sql.Int, parseInt(id))
+        .query('SELECT SUM(RoomRevenueShare) AS Split FROM AppStatementLineItems WHERE StatementID=@id')
+      const split = Number(liRes.recordset[0]?.Split) || 0
+      const adjRes2 = await pool.request().input('id', sql.Int, parseInt(id))
+        .query('SELECT AdjustmentType, Category, AdjustmentAmount FROM AppAdjustments WHERE StatementID=@id')
+      const reserveAdjTotal = adjRes2.recordset.filter(isReserveAdjustment)
+        .reduce((a, r) => a + (parseFloat(r.AdjustmentAmount) || 0), 0)
+
+      const { after, fivePctApplied } = computeReserve(before, reserveAdjTotal, split, true)
+
+      await pool.request()
+        .input('id', sql.Int, parseInt(id))
+        .input('before', sql.Decimal(12, 2), before)
+        .input('after', sql.Decimal(12, 2), after)
+        .query('UPDATE AppStatements SET ReserveBalanceBefore=@before, ReserveBalanceAfter=@after, ReserveAppliedAt=GETDATE() WHERE StatementID=@id')
+      await pool.request()
+        .input('ownerId', sql.Int, o.OwnerID)
+        .input('after', sql.Decimal(12, 2), after)
+        .query('UPDATE AppOwners SET ReserveBalance=@after, UpdatedDate=GETDATE() WHERE OwnerID=@ownerId')
+
+      return ok({ before, after, reserveAdjTotal: round(reserveAdjTotal), fivePctApplied })
+    } catch (e) {
+      console.error('statements/apply-reserve:', e.message)
       return err(e.message)
     }
   }
