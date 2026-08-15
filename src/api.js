@@ -78,6 +78,7 @@ export const api = {
     recalc: () => post('statements/recalc', {}),
     generateAll: (data) => post('statements/generate-all', data),
     // Server-side send: builds the PDF and mails it via Azure Communication Services.
+    emailPreview: (id) => get(`send-statement/${id}`),
     email: (id, to) => post(`send-statement/${id}`, to ? { to } : {})
   },
   adjustments: {

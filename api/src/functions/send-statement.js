@@ -14,7 +14,10 @@ const LOGO_CID = 'ggrc-logo'
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
 // Inline styles only — email clients strip <style> blocks and ignore external CSS.
-function buildHtml(payload, owner, lot) {
+// logoSrc differs by destination: the sent mail references the inline CID
+// attachment, while the in-app preview points at the hosted asset so a browser
+// can actually render it.
+function buildHtml(payload, owner, lot, logoSrc = `cid:${LOGO_CID}`) {
   const s = payload.Summary || {}
   const period = `${fmtDate(payload.ActivityStartDate)} – ${fmtDate(payload.ActivityEndDate)}`
   const rows = [
@@ -39,7 +42,7 @@ function buildHtml(payload, owner, lot) {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:8px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.08)">
 
         <tr><td style="padding:26px 32px 18px;text-align:center;border-bottom:3px solid #1b3a5c">
-          <img src="cid:${LOGO_CID}" alt="Garden of the Gods Resort" width="240" style="display:block;margin:0 auto;width:240px;max-width:75%;height:auto">
+          <img src="${logoSrc}" alt="Garden of the Gods Resort" width="240" style="display:block;margin:0 auto;width:240px;max-width:75%;height:auto">
         </td></tr>
 
         <tr><td style="padding:26px 32px 6px">
@@ -108,7 +111,7 @@ function buildText(payload, owner) {
 }
 
 app.http('sendStatement', {
-  methods: ['POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'OPTIONS'],
   authLevel: 'anonymous',
   route: 'send-statement/{id}',
   handler: async (request) => {
@@ -118,7 +121,10 @@ app.http('sendStatement', {
 
     const conn = process.env.ACS_CONNECTION_STRING
     const sender = process.env.ACS_SENDER_ADDRESS
-    if (!conn || !sender) return err('Email is not configured (ACS_CONNECTION_STRING / ACS_SENDER_ADDRESS missing).', 503)
+    // Only sending needs credentials — the preview should still render without them.
+    if (request.method === 'POST' && (!conn || !sender)) {
+      return err('Email is not configured (ACS_CONNECTION_STRING / ACS_SENDER_ADDRESS missing).', 503)
+    }
 
     try {
       const pool = await getPool()
@@ -135,6 +141,28 @@ app.http('sendStatement', {
       const owner = ownerRes.recordset[0] ?? {}
       const lot = lotRes.recordset[0] ?? {}
 
+      const period = `${fmtDate(payload.ActivityStartDate)} - ${fmtDate(payload.ActivityEndDate)}`
+      const subject = `GGRC Casita Statement for ${period}`
+      const fileName = `${payload.StatementNumber || `statement-${id}`}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
+
+      // GET renders the message for the in-app preview without sending anything.
+      // The logo needs an absolute URL: the preview renders inside a sandboxed
+      // iframe, where a relative path has no origin to resolve against.
+      if (request.method === 'GET') {
+        let logoSrc = '/ggrc-logo.png'
+        try { logoSrc = new URL('/ggrc-logo.png', request.url).toString() } catch { /* keep relative */ }
+        return ok({
+          to: owner.OwnerMainEmail || '',
+          ownerName: owner.OwnerFullName || null,
+          subject,
+          attachment: fileName,
+          from: sender || '(sender not configured)',
+          replyTo: CONTACT_EMAIL,
+          html: buildHtml(payload, owner, lot, logoSrc),
+          text: buildText(payload, owner)
+        })
+      }
+
       // An explicit "to" overrides the owner on file, so the UI can retry/redirect.
       let to = null
       try { to = (await request.json())?.to || null } catch { /* no body is fine */ }
@@ -142,8 +170,6 @@ app.http('sendStatement', {
       if (!to) return err('No email address on file for this owner.', 400)
 
       const pdf = await buildStatementPdf(payload, owner, lot)
-      const period = `${fmtDate(payload.ActivityStartDate)} - ${fmtDate(payload.ActivityEndDate)}`
-      const fileName = `${payload.StatementNumber || `statement-${id}`}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 
       const attachments = [
         { name: fileName, contentType: 'application/pdf', contentInBase64: pdf.toString('base64') }
@@ -161,7 +187,7 @@ app.http('sendStatement', {
       const poller = await client.beginSend({
         senderAddress: sender,
         content: {
-          subject: `GGRC Casita Statement for ${period}`,
+          subject,
           plainText: buildText(payload, owner),
           html: buildHtml(payload, owner, lot)
         },

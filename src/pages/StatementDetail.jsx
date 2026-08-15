@@ -87,20 +87,31 @@ export default function StatementDetail() {
   }
 
   // Sent server-side so the message can carry the branded HTML body and the PDF
-  // attachment — a mailto: hand-off supports neither.
+  // attachment — a mailto: hand-off supports neither. The button opens a preview
+  // of the exact message first; sending happens from inside that preview.
+  const [preview, setPreview] = useState(null)   // { to, subject, attachment, html, ... }
+  const [loadingPreview, setLoadingPreview] = useState(false)
   const [emailing, setEmailing] = useState(false)
+
   async function emailStatement() {
-    const start = fmtDate(stmt.ActivityStartDate)
-    const end = fmtDate(stmt.ActivityEndDate)
-    let to = owner?.OwnerMainEmail || ''
-    if (!to) {
-      to = prompt('No email on file for this owner. Send the statement to:') || ''
-      if (!to.trim()) return
+    setLoadingPreview(true)
+    try {
+      const p = await api.statements.emailPreview(statementId)
+      setPreview({ ...p, to: p.to || '' })
+    } catch (e) {
+      alert(`Could not build the email preview.\n\n${e.message}`)
+    } finally {
+      setLoadingPreview(false)
     }
-    if (!confirm(`Email the statement for ${start} – ${end} to ${to}?\n\nA PDF copy will be attached.`)) return
+  }
+
+  async function sendPreviewedEmail() {
+    const to = (preview?.to || '').trim()
+    if (!to) { alert('Enter a recipient address.'); return }
     setEmailing(true)
     try {
       const res = await api.statements.email(statementId, to)
+      setPreview(null)
       alert(`Statement emailed to ${res.to}.\nAttachment: ${res.attachment}`)
     } catch (e) {
       alert(`Could not send the statement.\n\n${e.message}`)
@@ -441,6 +452,59 @@ export default function StatementDetail() {
             <div className="flex justify-end gap-2 pt-2">
               <button className="btn-secondary" onClick={() => setAdjModal(null)}>Cancel</button>
               <button className="btn-primary" onClick={saveAdj}>Save</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {preview && (
+        <Modal title="Email Statement — Preview" onClose={() => !emailing && setPreview(null)} wide>
+          <div className="space-y-3">
+            {/* Envelope: To stays editable so a missing or wrong owner address can
+                be corrected without leaving the page. */}
+            <div className="grid grid-cols-[70px_1fr] gap-x-3 gap-y-2 items-center text-sm">
+              <label htmlFor="email-to" className="text-gray-500">To</label>
+              <input
+                id="email-to"
+                type="email"
+                className="input"
+                value={preview.to}
+                placeholder="No email on file for this owner — enter an address"
+                onChange={(e) => setPreview(p => ({ ...p, to: e.target.value }))}
+              />
+              <span className="text-gray-500">Subject</span>
+              <span className="text-gray-900">{preview.subject}</span>
+              <span className="text-gray-500">From</span>
+              <span className="text-gray-600 text-xs">
+                {preview.from} <span className="text-gray-400">(replies go to {preview.replyTo})</span>
+              </span>
+              <span className="text-gray-500">Attached</span>
+              <span>
+                <span className="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 rounded px-2 py-0.5 text-xs text-gray-700">
+                  📎 {preview.attachment}
+                </span>
+              </span>
+            </div>
+
+            {/* Rendered in an iframe so the email's own styles cannot leak into
+                the app (and vice versa). */}
+            <iframe
+              title="Email preview"
+              srcDoc={preview.html}
+              sandbox=""
+              className="w-full h-[52vh] border border-gray-200 rounded bg-gray-50"
+            />
+
+            <div className="flex justify-between items-center pt-1">
+              <span className="text-xs text-gray-500">
+                The PDF is generated when you send.
+              </span>
+              <div className="flex gap-2">
+                <button className="btn-secondary" onClick={() => setPreview(null)} disabled={emailing}>Cancel</button>
+                <button className="btn-primary" onClick={sendPreviewedEmail} disabled={emailing || !preview.to.trim()}>
+                  {emailing ? 'Sending…' : 'Send Email'}
+                </button>
+              </div>
             </div>
           </div>
         </Modal>
