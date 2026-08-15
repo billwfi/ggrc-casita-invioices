@@ -97,7 +97,10 @@ export default function StatementDetail() {
     setLoadingPreview(true)
     try {
       const p = await api.statements.emailPreview(statementId)
-      setPreview({ ...p, to: p.to || '' })
+      // The preview iframe is sandboxed and so has no origin of its own; give the
+      // logo an absolute URL from this page so it renders.
+      const html = p.html.split('src="/ggrc-logo.png"').join(`src="${window.location.origin}/ggrc-logo.png"`)
+      setPreview({ ...p, html, to: p.to || '' })
     } catch (e) {
       alert(`Could not build the email preview.\n\n${e.message}`)
     } finally {

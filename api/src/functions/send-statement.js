@@ -146,11 +146,11 @@ app.http('sendStatement', {
       const fileName = `${payload.StatementNumber || `statement-${id}`}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 
       // GET renders the message for the in-app preview without sending anything.
-      // The logo needs an absolute URL: the preview renders inside a sandboxed
-      // iframe, where a relative path has no origin to resolve against.
+      // The logo is emitted as a site-relative path and the browser rewrites it to
+      // an absolute one before rendering: request.url here is the internal Functions
+      // host that Static Web Apps proxies to, which is not reachable from a client.
       if (request.method === 'GET') {
-        let logoSrc = '/ggrc-logo.png'
-        try { logoSrc = new URL('/ggrc-logo.png', request.url).toString() } catch { /* keep relative */ }
+        const logoSrc = '/ggrc-logo.png'
         return ok({
           to: owner.OwnerMainEmail || '',
           ownerName: owner.OwnerFullName || null,
